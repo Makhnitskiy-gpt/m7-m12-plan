@@ -89,7 +89,6 @@ label input { accent-color: #3b82f6; }
 <label><input type="checkbox" id="lHangars" checked> <span class="legend-color" style="background:rgba(59,130,246,0.5);border:1px solid #3b82f6"></span> Ангары (15x30 м)</label>
 <label><input type="checkbox" id="lGravel" checked> <span class="legend-color" style="background:rgba(217,168,91,0.4);border:1px dashed #d9a85b"></span> Щебень (6м зазоры)</label>
 <label><input type="checkbox" id="lDriveway" checked> <span class="legend-color" style="background:rgba(156,163,175,0.3)"></span> Проезд 19м (ПДН)</label>
-<label><input type="checkbox" id="lGate" checked> <span class="legend-color" style="background:#ef4444"></span> Въездные ворота</label>
 <label><input type="checkbox" id="lDimensions" checked> Размерные линии</label>
 <label><input type="checkbox" id="lSetbacks" checked> Отступы от границ</label>
 <label><input type="checkbox" id="lDrainage"> Направление уклона</label>
@@ -99,11 +98,12 @@ label input { accent-color: #3b82f6; }
 <b>Параметры планировки</b>
 <table class="stats">
 <tr><td>Ангар</td><td class="val">15 x 30 м = 450 м2</td></tr>
+<tr><td>Плита</td><td class="val">16 x 31 м (+0.5м)</td></tr>
 <tr><td>Всего ангаров</td><td class="val">6 шт = 2 700 м2</td></tr>
 <tr><td>Проезд</td><td class="val">19 м (ширина)</td></tr>
 <tr><td>Зазоры</td><td class="val">6 м (щебень)</td></tr>
-<tr><td>Блок В-З</td><td class="val">57 м (3x15+2x6)</td></tr>
-<tr><td>Блок С-Ю</td><td class="val">79 м (30+19+30)</td></tr>
+<tr><td>Блок В-З</td><td class="val">60 м (3x16+2x6)</td></tr>
+<tr><td>Блок С-Ю</td><td class="val">81 м (31+19+31)</td></tr>
 </table>
 <div class="divider"></div>
 <table class="stats">
@@ -407,15 +407,18 @@ function drawRotRect(cu, cv, w, h, fill, stroke, lw, dash) {
 // ===================== LAYOUT CONSTANTS =====================
 const HANGAR_W = 15;   // across (arch span)
 const HANGAR_L = 30;   // along (building depth)
-const GAP = 6;         // between hangars
+const SLAB_PAD = 0.5;  // slab extends 0.5m beyond hangar on each side
+const SLAB_W = HANGAR_W + 2*SLAB_PAD;  // 16m
+const SLAB_L = HANGAR_L + 2*SLAB_PAD;  // 31m
+const GAP = 6;         // between hangars (measured between slabs: 6 - 2*0.5 = 5m clear)
 const DRIVE_W = 19;    // driveway width
-const blockW = 3*HANGAR_W + 2*GAP;  // 57m
+const blockW = 3*SLAB_W + 2*GAP;  // 60m (by slabs)
 const blockShift = 3.5;  // shifted east
 
 // ===================== LAYER CHECKBOXES =====================
 const layers = {};
 ['lBoundary','lGrid','lElevations','lContours','lCables','lPoles','lBuildings','lRoads','lSwamp',
- 'lHangars','lGravel','lDriveway','lGate','lDimensions','lSetbacks','lDrainage'].forEach(id => {
+ 'lHangars','lGravel','lDriveway','lDimensions','lSetbacks','lDrainage'].forEach(id => {
     layers[id] = document.getElementById(id);
     layers[id].addEventListener('change', draw);
 });
@@ -502,15 +505,15 @@ function draw() {
             'rgba(156,163,175,0.1)', 'rgba(156,163,175,0.2)', 1, null);
     }
 
-    // --- GRAVEL between hangars ---
+    // --- GRAVEL between slabs ---
     if (L('lGravel')) {
         for (let row = 0; row < 2; row++) {
             const sign = row === 0 ? 1 : -1;
-            const vCenter = sign * (DRIVE_W/2 + HANGAR_L/2);
+            const vCenter = sign * (DRIVE_W/2 + SLAB_L/2);
             for (let g = 0; g < 2; g++) {
-                const uLeft = blockShift + (-blockW/2 + HANGAR_W) + g*(HANGAR_W+GAP);
+                const uLeft = blockShift + (-blockW/2 + SLAB_W) + g*(SLAB_W+GAP);
                 const gravelU = uLeft + GAP/2;
-                drawRotRect(gravelU, vCenter, GAP, HANGAR_L,
+                drawRotRect(gravelU, vCenter, GAP, SLAB_L,
                     'rgba(217,168,91,0.15)', 'rgba(217,168,91,0.4)', 1, [3,2]);
 
                 const gp = localPt(gravelU, vCenter);
@@ -523,49 +526,37 @@ function draw() {
         }
     }
 
-    // --- 6 HANGARS ---
+    // --- 6 HANGARS (slab + hangar) ---
     if (L('lHangars')) {
         const names = ['\u04101','\u04102','\u04103','\u04104','\u04105','\u04106'];
         let hi = 0;
         for (let row = 0; row < 2; row++) {
             const sign = row === 0 ? 1 : -1;
-            const vCenter = sign * (DRIVE_W/2 + HANGAR_L/2);
+            const vCenter = sign * (DRIVE_W/2 + SLAB_L/2);
             for (let col = 0; col < 3; col++) {
-                const uCenter = blockShift + (-blockW/2 + HANGAR_W/2) + col*(HANGAR_W+GAP);
+                const uCenter = blockShift + (-blockW/2 + SLAB_W/2) + col*(SLAB_W+GAP);
+
+                // Foundation slab (16×31m) — wider outline
+                drawRotRect(uCenter, vCenter, SLAB_W, SLAB_L,
+                    'rgba(148,163,184,0.08)', 'rgba(148,163,184,0.5)', 1.5, [4,3]);
+
+                // Hangar on top of slab (15×30m)
                 drawRotRect(uCenter, vCenter, HANGAR_W, HANGAR_L,
                     'rgba(59,130,246,0.2)', '#3b82f6', 2, null);
 
                 const cp = localPt(uCenter, vCenter);
                 const [lsx,lsy] = toS(cp.x,cp.y);
                 ctx.fillStyle = '#93c5fd'; ctx.font = 'bold '+fs(12)+'px monospace'; ctx.textAlign = 'center';
-                ctx.fillText(names[hi], lsx, lsy-3);
+                ctx.fillText(names[hi], lsx, lsy-6);
                 ctx.font = fs(9)+'px monospace'; ctx.fillStyle = '#60a5fa';
-                ctx.fillText('15\u00d730', lsx, lsy + fs(9) + 2);
+                ctx.fillText('15\u00d730', lsx, lsy + fs(9) - 1);
+                ctx.font = fs(7)+'px monospace'; ctx.fillStyle = 'rgba(148,163,184,0.6)';
+                ctx.fillText('\u043f\u043b\u0438\u0442\u0430 16\u00d731', lsx, lsy + fs(9) + fs(7) + 2);
                 ctx.textAlign = 'left';
-
-                // Gate (driveway side)
-                const gateV = vCenter - sign * HANGAR_L/2;
-                const g1 = localPt(uCenter - HANGAR_W/2 + 2, gateV);
-                const g2 = localPt(uCenter + HANGAR_W/2 - 2, gateV);
-                const [g1s,g1y] = toS(g1.x,g1.y), [g2s,g2y] = toS(g2.x,g2.y);
-                ctx.strokeStyle = '#60a5fa'; ctx.lineWidth = 3;
-                ctx.beginPath(); ctx.moveTo(g1s,g1y); ctx.lineTo(g2s,g2y); ctx.stroke();
 
                 hi++;
             }
         }
-    }
-
-    // --- ENTRANCE GATE ---
-    if (L('lGate')) {
-        const gateP1 = localPt(33.4, DRIVE_W/2);
-        const gateP2 = localPt(33.4, -DRIVE_W/2);
-        const gs1 = toS(gateP1.x,gateP1.y), gs2 = toS(gateP2.x,gateP2.y);
-        ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 4;
-        ctx.beginPath(); ctx.moveTo(gs1[0],gs1[1]); ctx.lineTo(gs2[0],gs2[1]); ctx.stroke();
-        ctx.fillStyle = '#ef4444'; ctx.font = 'bold '+fs(11)+'px monospace';
-        const gl = toS(gateP1.x + 2*px, gateP1.y + 2*py);
-        ctx.fillText('\u0412\u042a\u0415\u0417\u0414', gl[0], gl[1]);
     }
 
     // ============= TOPO LAYERS (on top) =============
@@ -724,35 +715,36 @@ function draw() {
 
         ctx.font = fs(9)+'px monospace';
         for (let col = 0; col < 3; col++) {
-            const u = blockShift + (-blockW/2 + HANGAR_W/2) + col*(HANGAR_W+GAP);
-            const wp = localPt(u, DRIVE_W/2 + HANGAR_L + 3);
+            const u = blockShift + (-blockW/2 + SLAB_W/2) + col*(SLAB_W+GAP);
+            const wp = localPt(u, DRIVE_W/2 + SLAB_L + 3);
             const [wsx,wsy] = toS(wp.x,wp.y);
-            ctx.fillStyle = '#9ca3af'; ctx.fillText('15\u043c', wsx, wsy);
+            ctx.fillStyle = '#9ca3af'; ctx.fillText('16\u043c', wsx, wsy);
         }
 
-        const bwP1 = localPt(blockShift - blockW/2, -(DRIVE_W/2 + HANGAR_L + 5));
-        const bwP2 = localPt(blockShift + blockW/2, -(DRIVE_W/2 + HANGAR_L + 5));
+        const bwP1 = localPt(blockShift - blockW/2, -(DRIVE_W/2 + SLAB_L + 5));
+        const bwP2 = localPt(blockShift + blockW/2, -(DRIVE_W/2 + SLAB_L + 5));
         const [bw1x,bw1y] = toS(bwP1.x,bwP1.y), [bw2x,bw2y] = toS(bwP2.x,bwP2.y);
         ctx.strokeStyle = '#9ca3af'; ctx.lineWidth = 1;
         ctx.beginPath(); ctx.moveTo(bw1x,bw1y); ctx.lineTo(bw2x,bw2y); ctx.stroke();
         ctx.fillStyle = '#9ca3af'; ctx.font = fs(10)+'px monospace';
-        ctx.fillText('57 \u043c', (bw1x+bw2x)/2, (bw1y+bw2y)/2 - 5);
+        ctx.fillText('60 \u043c', (bw1x+bw2x)/2, (bw1y+bw2y)/2 - 5);
 
-        const dp1 = localPt(blockShift - blockW/2 - 4, DRIVE_W/2 + HANGAR_L);
+        const dp1 = localPt(blockShift - blockW/2 - 4, DRIVE_W/2 + SLAB_L);
         const dp2 = localPt(blockShift - blockW/2 - 4, DRIVE_W/2);
         const [d1x,d1y] = toS(dp1.x,dp1.y), [d2x,d2y] = toS(dp2.x,dp2.y);
         ctx.save(); ctx.translate((d1x+d2x)/2,(d1y+d2y)/2);
         ctx.rotate(Math.atan2(d2y-d1y,d2x-d1x));
-        ctx.fillText('30\u043c', 0, -4); ctx.restore();
+        ctx.fillText('31\u043c', 0, -4); ctx.restore();
 
-        const ns1 = localPt(blockShift + blockW/2 + 5, DRIVE_W/2 + HANGAR_L);
-        const ns2 = localPt(blockShift + blockW/2 + 5, -(DRIVE_W/2 + HANGAR_L));
+        const blockH = 2*SLAB_L + DRIVE_W; // 81m
+        const ns1 = localPt(blockShift + blockW/2 + 5, DRIVE_W/2 + SLAB_L);
+        const ns2 = localPt(blockShift + blockW/2 + 5, -(DRIVE_W/2 + SLAB_L));
         const [ns1x,ns1y] = toS(ns1.x,ns1.y), [ns2x,ns2y] = toS(ns2.x,ns2.y);
         ctx.strokeStyle = '#9ca3af'; ctx.lineWidth = 1;
         ctx.beginPath(); ctx.moveTo(ns1x,ns1y); ctx.lineTo(ns2x,ns2y); ctx.stroke();
         ctx.save(); ctx.translate((ns1x+ns2x)/2,(ns1y+ns2y)/2);
         ctx.rotate(Math.atan2(ns2y-ns1y,ns2x-ns1x));
-        ctx.fillText('79 \u043c', 0, -5); ctx.restore();
+        ctx.fillText(blockH + ' \u043c', 0, -5); ctx.restore();
 
         ctx.textAlign = 'left';
     }
@@ -765,16 +757,16 @@ function draw() {
         const [esx,esy] = toS(eSetP.x,eSetP.y);
         ctx.fillText('~1\u043c', esx, esy);
 
-        const nSetP = localPt(blockShift, DRIVE_W/2 + HANGAR_L + 3);
+        const nSetP = localPt(blockShift, DRIVE_W/2 + SLAB_L + 3);
         const [nsx,nsy] = toS(nSetP.x,nSetP.y);
         ctx.textAlign = 'center';
-        ctx.fillText('~5.5\u043c \u0434\u043e \u0421 \u0433\u0440\u0430\u043d\u0438\u0446\u044b', nsx, nsy - 12);
+        ctx.fillText('~5\u043c \u0434\u043e \u0421 \u0433\u0440\u0430\u043d\u0438\u0446\u044b', nsx, nsy - 12);
 
-        const sSetP = localPt(blockShift, -(DRIVE_W/2 + HANGAR_L + 3));
+        const sSetP = localPt(blockShift, -(DRIVE_W/2 + SLAB_L + 3));
         const [ssx,ssy] = toS(sSetP.x,sSetP.y);
-        ctx.fillText('~5.5\u043c \u0434\u043e \u042e \u0433\u0440\u0430\u043d\u0438\u0446\u044b', ssx, ssy + 15);
+        ctx.fillText('~5\u043c \u0434\u043e \u042e \u0433\u0440\u0430\u043d\u0438\u0446\u044b', ssx, ssy + 15);
 
-        const wSetP = localPt(blockShift - blockW/2 - 4, DRIVE_W/2 + HANGAR_L/2);
+        const wSetP = localPt(blockShift - blockW/2 - 4, DRIVE_W/2 + SLAB_L/2);
         const [wsx,wsy] = toS(wSetP.x,wSetP.y);
         ctx.fillText('~8\u043c', wsx, wsy);
 
