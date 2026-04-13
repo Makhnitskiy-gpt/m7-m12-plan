@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Схема планировки — 6 ангаров М7-М12</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #111827; color: #e5e7eb; font-family: 'SF Mono', 'Menlo', 'Courier New', monospace; overflow: hidden; height: 100vh; width: 100vw; }
+h1 { text-align: center; font-size: 14px; padding: 6px 0 2px; color: #f3f4f6; letter-spacing: 1px; }
+.subtitle { text-align: center; font-size: 10px; color: #6b7280; margin-bottom: 4px; }
+.container { display: flex; height: calc(100vh - 48px); }
+.canvas-wrap { flex: 1; position: relative; overflow: hidden; }
+canvas { display: block; width: 100%; height: 100%; background: #0c1222; cursor: grab; touch-action: none; }
+canvas.dragging { cursor: grabbing; }
+.panel { width: 270px; font-size: 11px; overflow-y: auto; padding: 6px; flex-shrink: 0; border-left: 1px solid #1e293b; }
+.section { margin-bottom: 6px; padding: 6px 8px; background: #1e293b; border-radius: 6px; }
+.section b { color: #93c5fd; font-size: 11px; }
+label { display: flex; align-items: center; gap: 5px; cursor: pointer; line-height: 1.7; }
+label input { accent-color: #3b82f6; }
+.legend-color { display: inline-block; width: 16px; height: 5px; border-radius: 2px; }
+.legend-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; }
+.stats td { padding: 1px 4px; }
+.val { color: #38bdf8; font-weight: bold; }
+.note { padding: 5px; background: #1c1917; border: 1px solid #78350f; border-radius: 4px; font-size: 10px; color: #fbbf24; margin-top: 4px; }
+.tooltip { position: absolute; background: #1e293b; border: 1px solid #38bdf8; padding: 5px 8px;
+           border-radius: 4px; font-size: 11px; pointer-events: none; display: none; z-index: 10; }
+.divider { border-top: 1px solid #374151; margin: 4px 0; }
+
+/* Zoom controls */
+.zoom-controls { position: absolute; top: 10px; left: 10px; display: flex; flex-direction: column; gap: 4px; z-index: 5; }
+.zoom-btn { width: 36px; height: 36px; background: rgba(30,41,59,0.9); color: #e5e7eb; border: 1px solid #374151;
+            border-radius: 6px; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+            user-select: none; -webkit-user-select: none; transition: background 0.15s; }
+.zoom-btn:hover { background: rgba(51,65,85,0.95); }
+.zoom-btn:active { background: #3b82f6; }
+.zoom-info { position: absolute; bottom: 10px; left: 10px; background: rgba(30,41,59,0.8); padding: 3px 8px;
+             border-radius: 4px; font-size: 10px; color: #9ca3af; z-index: 5; }
+.help-hint { position: absolute; bottom: 10px; right: 10px; background: rgba(30,41,59,0.8); padding: 3px 8px;
+             border-radius: 4px; font-size: 10px; color: #6b7280; z-index: 5; }
+
+/* Mobile */
+.panel-toggle { display: none; position: absolute; top: 10px; right: 10px; z-index: 10;
+                background: rgba(30,41,59,0.9); color: #e5e7eb; border: 1px solid #374151;
+                border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
+@media (max-width: 768px) {
+    .panel { position: absolute; right: 0; top: 0; bottom: 0; z-index: 20; background: #111827;
+             transform: translateX(100%); transition: transform 0.3s; }
+    .panel.open { transform: translateX(0); }
+    .panel-toggle { display: block; }
+    h1 { font-size: 12px; padding: 4px 0 1px; }
+    .subtitle { font-size: 9px; margin-bottom: 2px; }
+    .container { height: calc(100vh - 38px); }
+}
+</style>
+</head>
+<body>
+<h1>Схема планировки 6 ангаров — М7-М12</h1>
+<div class="subtitle">Топосъёмка + планировка | MSK-50 | Балтийская 1977 | уч. 50:16:0402027:362,363</div>
+<div class="container">
+<div class="canvas-wrap" id="canvasWrap">
+    <canvas id="c"></canvas>
+    <div class="zoom-controls">
+        <div class="zoom-btn" id="zoomIn" title="Приблизить">+</div>
+        <div class="zoom-btn" id="zoomOut" title="Отдалить">&minus;</div>
+        <div class="zoom-btn" id="zoomReset" title="Сбросить" style="font-size:13px;">&#8634;</div>
+    </div>
+    <div class="zoom-info" id="zoomInfo">1:500</div>
+    <div class="help-hint" id="helpHint">Колёсико = зум, перетаскивание = навигация</div>
+</div>
+<button class="panel-toggle" id="panelToggle">Слои</button>
+<div class="panel" id="panel">
+
+<div class="section">
+<b>Слои топосъёмки</b>
+<label><input type="checkbox" id="lBoundary" checked> <span class="legend-color" style="background:#ec4899"></span> Граница участка</label>
+<label><input type="checkbox" id="lGrid" checked> Координатная сетка</label>
+<label><input type="checkbox" id="lElevations" checked> <span class="legend-dot" style="background:#4ade80"></span><span class="legend-dot" style="background:#fb923c"></span> Высотные отметки</label>
+<label><input type="checkbox" id="lContours" checked> <span class="legend-color" style="background:#7c3aed"></span> Горизонтали</label>
+<label><input type="checkbox" id="lCables" checked> <span class="legend-color" style="background:#f97316"></span> Кабели (0.4 + 6 кВ)</label>
+<label><input type="checkbox" id="lPoles" checked> <span class="legend-dot" style="background:#fbbf24"></span> Опоры / ТП / ВЛ</label>
+<label><input type="checkbox" id="lBuildings" checked> Здания / ограждения</label>
+<label><input type="checkbox" id="lRoads"> <span class="legend-color" style="background:#6b7280"></span> Дороги (существующие)</label>
+<label><input type="checkbox" id="lSwamp" checked> Заболоченная зона</label>
+</div>
+
+<div class="section" style="border: 1px solid #3b82f6;">
+<b style="color:#60a5fa;">Слои планировки</b>
+<label><input type="checkbox" id="lHangars" checked> <span class="legend-color" style="background:rgba(59,130,246,0.5);border:1px solid #3b82f6"></span> Ангары (15x30 м)</label>
+<label><input type="checkbox" id="lGravel" checked> <span class="legend-color" style="background:rgba(217,168,91,0.4);border:1px dashed #d9a85b"></span> Щебень (6м зазоры)</label>
+<label><input type="checkbox" id="lDriveway" checked> <span class="legend-color" style="background:rgba(156,163,175,0.3)"></span> Проезд 19м (ПДН)</label>
+<label><input type="checkbox" id="lGate" checked> <span class="legend-color" style="background:#ef4444"></span> Въездные ворота</label>
+<label><input type="checkbox" id="lDimensions" checked> Размерные линии</label>
+<label><input type="checkbox" id="lSetbacks" checked> Отступы от границ</label>
+<label><input type="checkbox" id="lDrainage"> Направление уклона</label>
+</div>
+
+<div class="section">
+<b>Параметры планировки</b>
+<table class="stats">
+<tr><td>Ангар</td><td class="val">15 x 30 м = 450 м2</td></tr>
+<tr><td>Всего ангаров</td><td class="val">6 шт = 2 700 м2</td></tr>
+<tr><td>Проезд</td><td class="val">19 м (ширина)</td></tr>
+<tr><td>Зазоры</td><td class="val">6 м (щебень)</td></tr>
+<tr><td>Блок В-З</td><td class="val">57 м (3x15+2x6)</td></tr>
+<tr><td>Блок С-Ю</td><td class="val">79 м (30+19+30)</td></tr>
+</table>
+<div class="divider"></div>
+<table class="stats">
+<tr><td>Участок</td><td class="val">6 045 м2</td></tr>
+<tr><td>Под ангарами</td><td class="val">2 700 м2 (44.7%)</td></tr>
+<tr><td>Проезд + щебень</td><td class="val">~2 000 м2</td></tr>
+<tr><td>Свободно</td><td class="val">~1 345 м2</td></tr>
+</table>
+</div>
+
+<div class="section" style="border: 1px solid #22d3ee;">
+<b style="color:#22d3ee;">Земляные работы</b>
+<table class="stats">
+<tr><td>Баланс. отм.</td><td class="val">123.20 м БС</td></tr>
+<tr><td>Срезка (cut)</td><td style="color:#4ade80;font-weight:bold">~492 м3</td></tr>
+<tr><td>Насыпь (fill)</td><td style="color:#fb923c;font-weight:bold">~642 м3</td></tr>
+<tr><td>Стоимость</td><td class="val">0.9-1.6 млн</td></tr>
+</table>
+</div>
+
+<div class="note">
+<b>Отступы от границ</b><br>
+Некап. строение (ГрК РФ) = мин. 1м<br>
+Противопожарный (кат. Д) = 6м<br>
+Схема: ~1м В, ~5.5м С/Ю, ~8м З
+</div>
+
+<div class="note" style="border-color:#f97316;margin-top:4px;">
+<b>КЛ 0.4 кВ — ПЕРЕНОС</b><br>
+97 точек трассы. Идёт через участок по диагонали. Будет перенесён за счёт собственника.
+</div>
+
+</div>
+</div>
+<div class="tooltip" id="tip"></div>
+
+<script>
+// ===================== DATA =====================
+const data = {"boundary": [{"x": 2256559.26, "y": 478861.84, "label": "1 (\u0421\u0417)"}, {"x": 2256626.0, "y": 478854.61, "label": "2 (\u0421\u0412)"}, {"x": 2256615.25, "y": 478765.28, "label": "3 (\u042e\u0412)"}, {"x": 2256548.43, "y": 478772.48, "label": "4 (\u042e\u0417)"}], "cables_04kv": [[{"x": 2256550.443472513, "y": 478864.338196239}, {"x": 2256550.44480414, "y": 478863.7713263946}, {"x": 2256550.447733718, "y": 478862.281123604}, {"x": 2256550.450663297, "y": 478860.1831979812}, {"x": 2256550.451994924, "y": 478857.7931596401}, {"x": 2256550.450130647, "y": 478855.4266186947}, {"x": 2256550.443472513, "y": 478853.3991852589}, {"x": 2256550.430479493, "y": 478851.7182177089}, {"x": 2256550.411448918, "y": 478849.9748797204}, {"x": 2256550.389680283, "y": 478848.2516728958}, {"x": 2256550.368473084, "y": 478846.6310988378}, {"x": 2256550.351126813, "y": 478845.195659149}, {"x": 2256550.340940967, "y": 478844.0278554318}, {"x": 2256550.333367639, "y": 478843.5781632108}, {"x": 2256550.320195849, "y": 478843.1796843426}, {"x": 2256550.307896441, "y": 478842.8230368565}, {"x": 2256550.302940261, "y": 478842.4988387819}, {"x": 2256550.311798154, "y": 478842.1977081483}, {"x": 2256550.340940967, "y": 478841.9102629852}, {"x": 2256550.414707816, "y": 478841.5514037443}, {"x": 2256550.515276897, "y": 478841.2373002304}, {"x": 2256550.634727474, "y": 478840.9260295203}, {"x": 2256550.759165431, "y": 478840.6111496764}, {"x": 2256550.903939067, "y": 478840.299320808}, {"x": 2256550.999657218, "y": 478840.1261173274}, {"x": 2256551.119305833, "y": 478839.9315567957}, {"x": 2256551.465199055, "y": 478839.4565279303}, {"x": 2256551.923866306, "y": 478838.9041321566}, {"x": 2256552.458386438, "y": 478838.291633627}, {"x": 2256553.031838298, "y": 478837.6362964937}, {"x": 2256553.607300736, "y": 478836.9553849089}, {"x": 2256554.147852601, "y": 478836.266163025}, {"x": 2256554.764840913, "y": 478835.4161749907}, {"x": 2256555.400346472, "y": 478834.5052511564}, {"x": 2256556.038649313, "y": 478833.5587460388}, {"x": 2256556.664029469, "y": 478832.6020141542}, {"x": 2256557.260766975, "y": 478831.6604100193}, {"x": 2256557.813141863, "y": 478830.7592881506}, {"x": 2256558.268638133, "y": 478829.9834746108}, {"x": 2256558.720799313, "y": 478829.1810268434}, {"x": 2256559.151798763, "y": 478828.3897557421}, {"x": 2256559.543809846, "y": 478827.6474722005}, {"x": 2256559.879005922, "y": 478826.9919871124}, {"x": 2256560.139560351, "y": 478826.4611113715}, {"x": 2256560.227578416, "y": 478826.2730547418}, {"x": 2256560.359337934, "y": 478825.9699625673}, {"x": 2256560.464486758, "y": 478825.6967685357}, {"x": 2256560.580119578, "y": 478825.3850567599}, {"x": 2256560.695453890, "y": 478825.0834034749}, {"x": 2256560.803118474, "y": 478824.7106162337}, {"x": 2256560.854409436, "y": 478824.4606709637}, {"x": 2256560.977118201, "y": 478823.3446766658}, {"x": 2256561.055750440, "y": 478821.7870541379}, {"x": 2256561.117821582, "y": 478819.9273300291}, {"x": 2256561.190847054, "y": 478817.9050309886}, {"x": 2256561.302342284, "y": 478815.8596836654}, {"x": 2256561.479822701, "y": 478813.9308147086}, {"x": 2256561.757260047, "y": 478811.9262872236}, {"x": 2256562.096633062, "y": 478809.909965251}, {"x": 2256562.482435700, "y": 478807.8658260233}, {"x": 2256562.899161916, "y": 478805.777846773}, {"x": 2256563.331305664, "y": 478803.6300047328}, {"x": 2256563.763360897, "y": 478801.406277135}, {"x": 2256564.306954690, "y": 478798.4083941698}, {"x": 2256564.901521873, "y": 478795.0193337566}, {"x": 2256565.517961775, "y": 478791.5453465176}, {"x": 2256566.127173727, "y": 478788.2926830748}, {"x": 2256566.700057059, "y": 478785.5675940502}, {"x": 2256567.207511099, "y": 478783.6763300658}, {"x": 2256567.489697204, "y": 478782.9765339001}, {"x": 2256567.756930359, "y": 478782.4938886439}, {"x": 2256568.035277893, "y": 478782.0123222945}, {"x": 2256568.301877751, "y": 478781.5022071835}, {"x": 2256568.580058496, "y": 478780.9932162651}, {"x": 2256568.758987240, "y": 478780.6886475511}, {"x": 2256568.983405849, "y": 478780.3237660927}, {"x": 2256570.103613027, "y": 478778.6380174822}, {"x": 2256571.824373583, "y": 478776.1458414413}, {"x": 2256573.787045565, "y": 478773.3435433331}, {"x": 2256575.632987018, "y": 478770.7274285206}, {"x": 2256577.003555989, "y": 478768.7938023669}, {"x": 2256577.540110525, "y": 478768.038970235}]], "cables_6kv": [[{"x": 2256618.300138836, "y": 478764.1221609515}, {"x": 2256621.317979738, "y": 478790.2754424615}, {"x": 2256623.338920513, "y": 478808.0108176768}, {"x": 2256622.136576604, "y": 478811.16984009}, {"x": 2256622.564202390, "y": 478813.6782457214}, {"x": 2256622.736618489, "y": 478814.804827732}]], "power_objects": [[{"x": 2256628.494055071, "y": 478819.3122249731}, {"x": 2256623.504629736, "y": 478819.7539443681}, {"x": 2256627.492461706, "y": 478851.6562242881}, {"x": 2256628.509398170, "y": 478860.1005391695}], [{"x": 2256623.504629736, "y": 478819.7539443681}, {"x": 2256623.904790752, "y": 478823.8512556041}]], "buildings": [[{"x": 2256548.768920478, "y": 478825.1123174448}, {"x": 2256551.746821549, "y": 478824.7488546417}, {"x": 2256545.821228598, "y": 478776.1996510846}, {"x": 2256542.843327521, "y": 478776.5631138882}], [{"x": 2256548.897344002, "y": 478826.1645091567}, {"x": 2256552.927436785, "y": 478825.6726228299}, {"x": 2256546.744996787, "y": 478775.019035849}, {"x": 2256542.714903997, "y": 478775.5109221762}]], "fences": [[{"x": 2256614.808039756, "y": 478762.5535247685}, {"x": 2256614.895265711, "y": 478765.1967830646}, {"x": 2256601.496761389, "y": 478766.773078996}, {"x": 2256583.427830488, "y": 478768.7113846336}, {"x": 2256567.049130061, "y": 478770.5274007051}, {"x": 2256542.419509721, "y": 478773.0745123595}]], "roads": [[{"x": 2256575.573535479, "y": 478871.1302397049}, {"x": 2256575.567971637, "y": 478870.2068469077}, {"x": 2256575.172924309, "y": 478867.2620328996}, {"x": 2256575.02174779, "y": 478866.5943673325}, {"x": 2256574.900701253, "y": 478866.3471786259}, {"x": 2256574.761553554, "y": 478866.1760170021}, {"x": 2256574.606350333, "y": 478866.0422971268}, {"x": 2256574.247370092, "y": 478866.0063313004}, {"x": 2256549.629895590, "y": 478868.5710400096}], [{"x": 2256549.664067651, "y": 478865.2528046123}, {"x": 2256565.767872235, "y": 478863.6268053483}, {"x": 2256578.280678285, "y": 478862.004417534}, {"x": 2256578.645944733, "y": 478861.9603250122}, {"x": 2256578.834754291, "y": 478862.004417534}, {"x": 2256578.908629066, "y": 478862.0756367683}, {"x": 2256578.951383327, "y": 478862.1775360837}, {"x": 2256578.995664221, "y": 478862.668892108}, {"x": 2256579.396369878, "y": 478869.9700554772}, {"x": 2256579.504669546, "y": 478870.8867494508}], [{"x": 2256630.918499488, "y": 478858.7228881397}, {"x": 2256628.488077873, "y": 478841.4431198044}, {"x": 2256625.608471627, "y": 478820.9620892704}, {"x": 2256624.090561216, "y": 478795.2873818893}, {"x": 2256621.221374940, "y": 478776.6226158993}, {"x": 2256619.503818044, "y": 478763.4527723753}, {"x": 2256619.212777796, "y": 478761.2211406048}]], "swamp": {"x": 2256620.8, "y": 478850.8}, "labels": [{"x": 2256619.9, "y": 478816.0, "text": "\u0422\u041f", "type": "power"}, {"x": 2256621.4, "y": 478794.8, "text": "\u041a\u041b 6\u043a\u0412", "type": "power"}, {"x": 2256627.8, "y": 478845.0, "text": "\u0412\u041b 6\u043a\u0412 (3 \u043f\u0440.)", "type": "power"}, {"x": 2256551.5, "y": 478863.5, "text": "\u041a\u041b 0.4\u043a\u0412", "type": "cable"}, {"x": 2256562.9, "y": 478810.6, "text": "\u043a\u0430\u0431.", "type": "cable"}, {"x": 2256571.4, "y": 478778.8, "text": "\u043a\u0430\u0431.", "type": "cable"}], "power_poles": [{"x": 2256622.7, "y": 478814.8}, {"x": 2256623.5, "y": 478819.8}, {"x": 2256628.5, "y": 478860.1}, {"x": 2256623.9, "y": 478823.9}], "elevations": [{"x": 2256610.881527581, "y": 478765.8874569068, "z": 122.97}, {"x": 2256613.600183384, "y": 478765.0793149309, "z": 123.12}, {"x": 2256605.013072299, "y": 478769.550873143, "z": 123.01}, {"x": 2256602.16206009, "y": 478767.1031633951, "z": 123.38}, {"x": 2256593.658834706, "y": 478773.0308705423, "z": 123.32}, {"x": 2256583.973759439, "y": 478769.0515093713, "z": 123.45}, {"x": 2256577.473779032, "y": 478774.5584004832, "z": 123.3}, {"x": 2256567.572006755, "y": 478770.915128288, "z": 123.6}, {"x": 2256561.15308436, "y": 478776.8155919742, "z": 123.29}, {"x": 2256549.803067165, "y": 478776.2005432258, "z": 123.61}, {"x": 2256542.114681205, "y": 478771.8715803071, "z": 123.66}, {"x": 2256542.284505069, "y": 478776.8579296576, "z": 123.9}, {"x": 2256546.325676008, "y": 478782.9488777326, "z": 123.9}, {"x": 2256548.428207795, "y": 478800.8187854275, "z": 123.91}, {"x": 2256549.997112275, "y": 478813.8179414728, "z": 123.91}, {"x": 2256551.077953703, "y": 478820.6434602667, "z": 123.89}, {"x": 2256556.695186662, "y": 478828.5892530205, "z": 122.87}, {"x": 2256548.684853974, "y": 478830.683103337, "z": 122.72}, {"x": 2256557.584226645, "y": 478820.227553611, "z": 122.95}, {"x": 2256554.280393342, "y": 478810.8622143082, "z": 122.96}, {"x": 2256552.639150721, "y": 478800.089559201, "z": 123.26}, {"x": 2256551.319040278, "y": 478789.8775335491, "z": 123.25}, {"x": 2256548.903436248, "y": 478777.0093426447, "z": 123.48}, {"x": 2256541.925480008, "y": 478773.5736374042, "z": 123.51}, {"x": 2256555.522981232, "y": 478780.2292831401, "z": 123.24}, {"x": 2256565.205637803, "y": 478780.9636207225, "z": 123.14}, {"x": 2256575.707671238, "y": 478778.5718366216, "z": 123.22}, {"x": 2256568.342457202, "y": 478781.9435875911, "z": 123.13}, {"x": 2256567.906965362, "y": 478786.5895057616, "z": 123.1}, {"x": 2256569.989143656, "y": 478797.8090526816, "z": 123.25}, {"x": 2256564.070540206, "y": 478801.3375424315, "z": 123.02}, {"x": 2256558.275251363, "y": 478799.212874149, "z": 123.07}, {"x": 2256556.669848697, "y": 478788.9873920642, "z": 123.23}, {"x": 2256560.49538373, "y": 478779.6928348576, "z": 123.25}, {"x": 2256563.244762737, "y": 478792.1530164072, "z": 122.79}, {"x": 2256566.086584426, "y": 478807.1971204996, "z": 122.84}, {"x": 2256561.78700201, "y": 478813.8620800051, "z": 122.84}, {"x": 2256564.460731764, "y": 478823.2603214508, "z": 122.77}, {"x": 2256560.826420765, "y": 478825.4773498811, "z": 122.82}, {"x": 2256554.45503191, "y": 478836.1974283215, "z": 122.81}, {"x": 2256551.175396322, "y": 478833.2245698302, "z": 122.72}, {"x": 2256550.648120276, "y": 478841.8415282816, "z": 122.92}, {"x": 2256550.750651822, "y": 478853.3304505554, "z": 123.0}, {"x": 2256556.254647901, "y": 478853.3369894531, "z": 122.99}, {"x": 2256555.381001315, "y": 478861.1871818659, "z": 122.95}, {"x": 2256550.201157779, "y": 478865.591508092, "z": 123.24}, {"x": 2256554.641581636, "y": 478868.0803220945, "z": 123.21}, {"x": 2256565.929082146, "y": 478863.8297970693, "z": 123.21}, {"x": 2256574.577077254, "y": 478862.8490240239, "z": 123.22}, {"x": 2256579.639242422, "y": 478870.2562074769, "z": 123.2}, {"x": 2256570.083838651, "y": 478866.8102807424, "z": 123.35}, {"x": 2256570.857081428, "y": 478860.3474825863, "z": 123.22}, {"x": 2256563.296063934, "y": 478851.4126614134, "z": 123.24}, {"x": 2256567.058944178, "y": 478849.3453872237, "z": 123.26}, {"x": 2256571.934028611, "y": 478846.0141722998, "z": 123.24}, {"x": 2256562.642299896, "y": 478837.7659485313, "z": 123.15}, {"x": 2256567.241623439, "y": 478833.1088410123, "z": 123.19}, {"x": 2256575.412792823, "y": 478842.1582921744, "z": 123.23}, {"x": 2256580.359675996, "y": 478838.6366496228, "z": 123.15}, {"x": 2256576.939591818, "y": 478835.9793611005, "z": 123.19}, {"x": 2256576.421167138, "y": 478830.11860919, "z": 123.14}, {"x": 2256577.883988064, "y": 478828.2234626171, "z": 123.15}, {"x": 2256573.416917741, "y": 478825.3604814802, "z": 123.09}, {"x": 2256573.325182968, "y": 478814.890521279, "z": 122.84}, {"x": 2256574.171454971, "y": 478804.0133719457, "z": 122.87}, {"x": 2256574.020232106, "y": 478794.1968098302, "z": 123.31}, {"x": 2256574.631563153, "y": 478788.6523661643, "z": 123.27}, {"x": 2256575.449141628, "y": 478780.6111710333, "z": 123.17}, {"x": 2256582.432427017, "y": 478778.9485268007, "z": 123.11}, {"x": 2256581.807715696, "y": 478787.6766799307, "z": 123.23}, {"x": 2256582.056359033, "y": 478795.8061024511, "z": 123.19}, {"x": 2256582.944389777, "y": 478805.788553454, "z": 122.94}, {"x": 2256583.944387491, "y": 478817.247831959, "z": 122.99}, {"x": 2256586.022218712, "y": 478829.01724669, "z": 123.03}, {"x": 2256584.983077085, "y": 478839.6830207259, "z": 123.05}, {"x": 2256579.982411749, "y": 478851.5525570459, "z": 123.17}, {"x": 2256575.111739104, "y": 478856.2556243819, "z": 123.15}, {"x": 2256583.869568267, "y": 478861.5961765787, "z": 123.12}, {"x": 2256590.138460229, "y": 478861.47809733, "z": 123.18}, {"x": 2256601.383550472, "y": 478860.2656766205, "z": 123.12}, {"x": 2256612.824730086, "y": 478858.6889100839, "z": 122.79}, {"x": 2256617.638883019, "y": 478859.2265864104, "z": 122.68}, {"x": 2256615.08053649, "y": 478854.2410671707, "z": 122.59}, {"x": 2256613.792290901, "y": 478850.1328649676, "z": 122.64}, {"x": 2256617.363199802, "y": 478844.5585308467, "z": 122.67}, {"x": 2256628.809609714, "y": 478853.7937225589, "z": 122.73}, {"x": 2256631.623332263, "y": 478854.4257947075, "z": 123.13}, {"x": 2256629.871857511, "y": 478841.0907583235, "z": 123.12}, {"x": 2256618.857304082, "y": 478833.0486095948, "z": 123.04}, {"x": 2256627.09709826, "y": 478821.7720661984, "z": 123.12}, {"x": 2256619.022441507, "y": 478824.671649191, "z": 123.09}, {"x": 2256618.829861883, "y": 478820.218686639, "z": 123.18}, {"x": 2256620.645314914, "y": 478816.8267328372, "z": 123.35}, {"x": 2256615.180609696, "y": 478807.3440999514, "z": 123.04}, {"x": 2256625.494052213, "y": 478794.2147053874, "z": 123.04}, {"x": 2256622.754316328, "y": 478777.0337363847, "z": 123.2}, {"x": 2256620.871475287, "y": 478763.5406121235, "z": 123.27}, {"x": 2256615.333202261, "y": 478762.4081572705, "z": 123.22}, {"x": 2256613.440701999, "y": 478771.7980440551, "z": 122.87}, {"x": 2256606.042011536, "y": 478774.6640430205, "z": 123.08}, {"x": 2256596.65099657, "y": 478778.1649835343, "z": 123.25}, {"x": 2256592.124388205, "y": 478787.2476192077, "z": 123.19}, {"x": 2256596.325807787, "y": 478799.7289379836, "z": 123.26}, {"x": 2256597.86897925, "y": 478811.545296832, "z": 123.32}, {"x": 2256598.615868802, "y": 478822.4011528093, "z": 123.09}, {"x": 2256594.17749246, "y": 478834.9410307827, "z": 123.15}, {"x": 2256589.686256884, "y": 478847.4598694466, "z": 123.22}, {"x": 2256595.613898613, "y": 478854.1633655308, "z": 123.29}, {"x": 2256605.545206476, "y": 478853.9043379902, "z": 123.35}, {"x": 2256608.235800419, "y": 478851.0132644552, "z": 123.39}, {"x": 2256603.478444324, "y": 478842.9093708239, "z": 123.57}, {"x": 2256603.60626863, "y": 478833.464309116, "z": 123.42}, {"x": 2256606.635137619, "y": 478822.5850257098, "z": 123.25}, {"x": 2256608.749789313, "y": 478810.7928031066, "z": 123.14}, {"x": 2256607.522250171, "y": 478798.6859680834, "z": 123.24}, {"x": 2256606.339755798, "y": 478787.6866560858, "z": 123.33}, {"x": 2256611.849514854, "y": 478780.4733139054, "z": 123.2}, {"x": 2256615.541876332, "y": 478790.6773888404, "z": 123.09}, {"x": 2256615.754318937, "y": 478803.9175445503, "z": 123.06}, {"x": 2256616.130605276, "y": 478818.1230106432, "z": 123.44}, {"x": 2256616.073614834, "y": 478828.3713713377, "z": 123.34}, {"x": 2256619.790527108, "y": 478840.0354704103, "z": 123.34}, {"x": 2256611.89667957, "y": 478838.5244829157, "z": 123.72}, {"x": 2256612.631936431, "y": 478843.9833431505, "z": 123.49}], "contours": [[{"x": 2256559.211768297, "y": 478797.5147714539}, {"x": 2256559.809829613, "y": 478798.2878034248}, {"x": 2256560.359361391, "y": 478798.7982099141}, {"x": 2256562.371836094, "y": 478800.2246905635}, {"x": 2256563.416508398, "y": 478800.5937661529}, {"x": 2256563.925152719, "y": 478800.4388415634}, {"x": 2256564.448928579, "y": 478799.8121986757}, {"x": 2256565.323263672, "y": 478796.648990311}, {"x": 2256565.99892242, "y": 478794.7890800609}, {"x": 2256566.509067055, "y": 478793.3288496971}, {"x": 2256567.554686467, "y": 478791.2568156667}, {"x": 2256567.766094852, "y": 478789.9115838251}, {"x": 2256567.617109048, "y": 478789.1857768256}, {"x": 2256565.345003061, "y": 478786.1444384261}, {"x": 2256564.401162933, "y": 478785.5121468905}, {"x": 2256563.846949727, "y": 478785.5218160951}, {"x": 2256563.142026905, "y": 478785.9719813438}, {"x": 2256561.008359272, "y": 478788.6999293052}, {"x": 2256560.438884718, "y": 478789.552602281}, {"x": 2256559.799422367, "y": 478790.7108204754}, {"x": 2256559.261000509, "y": 478792.9939759515}, {"x": 2256558.954036267, "y": 478795.8146569224}, {"x": 2256559.0695424, "y": 478797.188707181}]]};
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const tip = document.getElementById('tip');
+const wrap = document.getElementById('canvasWrap');
+
+// ===================== RESPONSIVE CANVAS =====================
+let CW, CH;
+function resizeCanvas() {
+    const dpr = window.devicePixelRatio || 1;
+    CW = wrap.clientWidth;
+    CH = wrap.clientHeight;
+    canvas.width = CW * dpr;
+    canvas.height = CH * dpr;
+    canvas.style.width = CW + 'px';
+    canvas.style.height = CH + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    draw();
+}
+
+// ===================== ZOOM / PAN STATE =====================
+const worldMinX = 2256530, worldMaxX = 2256650;
+const worldMinY = 478755, worldMaxY = 478882;
+
+let viewMinX = worldMinX, viewMaxX = worldMaxX;
+let viewMinY = worldMinY, viewMaxY = worldMaxY;
+
+function toS(x, y) {
+    const PAD = 30;
+    const W = CW - 2 * PAD, H = CH - 2 * PAD;
+    return [
+        PAD + ((x - viewMinX) / (viewMaxX - viewMinX)) * W,
+        PAD + ((viewMaxY - y) / (viewMaxY - viewMinY)) * H
+    ];
+}
+
+function fromS(sx, sy) {
+    const PAD = 30;
+    const W = CW - 2 * PAD, H = CH - 2 * PAD;
+    return [
+        viewMinX + ((sx - PAD) / W) * (viewMaxX - viewMinX),
+        viewMaxY - ((sy - PAD) / H) * (viewMaxY - viewMinY)
+    ];
+}
+
+function getScale() {
+    const realMeters = viewMaxX - viewMinX;
+    const screenPx = CW - 60;
+    const metersPerPx = realMeters / screenPx;
+    return Math.round(metersPerPx * 1000);
+}
+
+function updateZoomInfo() {
+    document.getElementById('zoomInfo').textContent = '1:' + getScale();
+}
+
+function zoomAt(cx, cy, factor) {
+    const [wx, wy] = fromS(cx, cy);
+    const newW = (viewMaxX - viewMinX) / factor;
+    const newH = (viewMaxY - viewMinY) / factor;
+    const rx = (wx - viewMinX) / (viewMaxX - viewMinX);
+    const ry = (wy - viewMinY) / (viewMaxY - viewMinY);
+    viewMinX = wx - rx * newW;
+    viewMaxX = wx + (1 - rx) * newW;
+    viewMinY = wy - ry * newH;
+    viewMaxY = wy + (1 - ry) * newH;
+    updateZoomInfo();
+    draw();
+}
+
+function resetView() {
+    viewMinX = worldMinX; viewMaxX = worldMaxX;
+    viewMinY = worldMinY; viewMaxY = worldMaxY;
+    updateZoomInfo();
+    draw();
+}
+
+// ===================== MOUSE INTERACTIONS =====================
+let isDragging = false, dragStartX, dragStartY, dragViewMinX, dragViewMaxX, dragViewMinY, dragViewMaxY;
+
+canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    const factor = e.deltaY < 0 ? 1.15 : 1/1.15;
+    zoomAt(mx, my, factor);
+}, { passive: false });
+
+canvas.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    isDragging = true;
+    dragStartX = e.clientX; dragStartY = e.clientY;
+    dragViewMinX = viewMinX; dragViewMaxX = viewMaxX;
+    dragViewMinY = viewMinY; dragViewMaxY = viewMaxY;
+    canvas.classList.add('dragging');
+});
+
+window.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    const dx = e.clientX - dragStartX, dy = e.clientY - dragStartY;
+    const PAD = 30;
+    const W = CW - 2*PAD, H = CH - 2*PAD;
+    const worldDx = -dx / W * (dragViewMaxX - dragViewMinX);
+    const worldDy = dy / H * (dragViewMaxY - dragViewMinY);
+    viewMinX = dragViewMinX + worldDx;
+    viewMaxX = dragViewMaxX + worldDx;
+    viewMinY = dragViewMinY + worldDy;
+    viewMaxY = dragViewMaxY + worldDy;
+    draw();
+});
+
+window.addEventListener('mouseup', () => {
+    isDragging = false;
+    canvas.classList.remove('dragging');
+});
+
+// ===================== TOUCH INTERACTIONS =====================
+let touches = [], lastTouchDist = 0, lastTouchCenter = null;
+
+canvas.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    touches = Array.from(e.touches);
+    if (touches.length === 1) {
+        isDragging = true;
+        dragStartX = touches[0].clientX; dragStartY = touches[0].clientY;
+        dragViewMinX = viewMinX; dragViewMaxX = viewMaxX;
+        dragViewMinY = viewMinY; dragViewMaxY = viewMaxY;
+    } else if (touches.length === 2) {
+        isDragging = false;
+        lastTouchDist = Math.hypot(touches[1].clientX - touches[0].clientX, touches[1].clientY - touches[0].clientY);
+        const rect = canvas.getBoundingClientRect();
+        lastTouchCenter = {
+            x: (touches[0].clientX + touches[1].clientX) / 2 - rect.left,
+            y: (touches[0].clientY + touches[1].clientY) / 2 - rect.top
+        };
+    }
+}, { passive: false });
+
+canvas.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    const ts = Array.from(e.touches);
+    if (ts.length === 1 && isDragging) {
+        const dx = ts[0].clientX - dragStartX, dy = ts[0].clientY - dragStartY;
+        const PAD = 30;
+        const W = CW - 2*PAD, H = CH - 2*PAD;
+        const worldDx = -dx / W * (dragViewMaxX - dragViewMinX);
+        const worldDy = dy / H * (dragViewMaxY - dragViewMinY);
+        viewMinX = dragViewMinX + worldDx;
+        viewMaxX = dragViewMaxX + worldDx;
+        viewMinY = dragViewMinY + worldDy;
+        viewMaxY = dragViewMaxY + worldDy;
+        draw();
+    } else if (ts.length === 2) {
+        const dist = Math.hypot(ts[1].clientX - ts[0].clientX, ts[1].clientY - ts[0].clientY);
+        if (lastTouchDist > 0 && lastTouchCenter) {
+            const factor = dist / lastTouchDist;
+            zoomAt(lastTouchCenter.x, lastTouchCenter.y, factor);
+        }
+        lastTouchDist = dist;
+        const rect = canvas.getBoundingClientRect();
+        lastTouchCenter = {
+            x: (ts[0].clientX + ts[1].clientX) / 2 - rect.left,
+            y: (ts[0].clientY + ts[1].clientY) / 2 - rect.top
+        };
+    }
+}, { passive: false });
+
+canvas.addEventListener('touchend', (e) => {
+    isDragging = false;
+    touches = Array.from(e.touches);
+    if (touches.length < 2) { lastTouchDist = 0; lastTouchCenter = null; }
+});
+
+// Double-tap to reset
+let lastTapTime = 0;
+canvas.addEventListener('touchend', (e) => {
+    if (e.touches.length === 0) {
+        const now = Date.now();
+        if (now - lastTapTime < 300) resetView();
+        lastTapTime = now;
+    }
+});
+
+// Double-click to reset
+canvas.addEventListener('dblclick', resetView);
+
+// Zoom buttons
+document.getElementById('zoomIn').addEventListener('click', () => zoomAt(CW/2, CH/2, 1.5));
+document.getElementById('zoomOut').addEventListener('click', () => zoomAt(CW/2, CH/2, 1/1.5));
+document.getElementById('zoomReset').addEventListener('click', resetView);
+
+// ===================== PLOT-ALIGNED COORDINATE SYSTEM =====================
+const bnd = data.boundary;
+const eastDx = bnd[2].x - bnd[1].x, eastDy = bnd[2].y - bnd[1].y;
+const eastLen = Math.sqrt(eastDx*eastDx + eastDy*eastDy);
+const ax = -eastDx/eastLen, ay = -eastDy/eastLen;  // along (S->N)
+const px = ay, py = -ax;  // across (W->E)
+
+const cxW = (bnd[0].x+bnd[1].x+bnd[2].x+bnd[3].x)/4;
+const cyW = (bnd[0].y+bnd[1].y+bnd[2].y+bnd[3].y)/4;
+
+function localPt(u, v) {
+    return { x: cxW + u*px + v*ax, y: cyW + u*py + v*ay };
+}
+
+function drawRotRect(cu, cv, w, h, fill, stroke, lw, dash) {
+    const pts = [
+        localPt(cu-w/2, cv-h/2), localPt(cu+w/2, cv-h/2),
+        localPt(cu+w/2, cv+h/2), localPt(cu-w/2, cv+h/2)
+    ];
+    ctx.fillStyle = fill; ctx.strokeStyle = stroke; ctx.lineWidth = lw;
+    if (dash) ctx.setLineDash(dash);
+    ctx.beginPath();
+    pts.forEach((p,i) => { const [sx,sy] = toS(p.x,p.y); i===0?ctx.moveTo(sx,sy):ctx.lineTo(sx,sy); });
+    ctx.closePath();
+    if (fill !== 'none') ctx.fill();
+    ctx.stroke();
+    if (dash) ctx.setLineDash([]);
+    return pts;
+}
+
+// ===================== LAYOUT CONSTANTS =====================
+const HANGAR_W = 15;   // across (arch span)
+const HANGAR_L = 30;   // along (building depth)
+const GAP = 6;         // between hangars
+const DRIVE_W = 19;    // driveway width
+const blockW = 3*HANGAR_W + 2*GAP;  // 57m
+const blockShift = 3.5;  // shifted east
+
+// ===================== LAYER CHECKBOXES =====================
+const layers = {};
+['lBoundary','lGrid','lElevations','lContours','lCables','lPoles','lBuildings','lRoads','lSwamp',
+ 'lHangars','lGravel','lDriveway','lGate','lDimensions','lSetbacks','lDrainage'].forEach(id => {
+    layers[id] = document.getElementById(id);
+    layers[id].addEventListener('change', draw);
+});
+
+function L(id) { return layers[id].checked; }
+
+// ===================== ADAPTIVE FONT SIZE =====================
+function fs(basePx) {
+    const zoom = (worldMaxX - worldMinX) / (viewMaxX - viewMinX);
+    return Math.max(7, Math.min(basePx * Math.sqrt(zoom), basePx * 3));
+}
+
+// ===================== DRAW =====================
+function draw() {
+    if (!CW) return;
+    ctx.clearRect(0, 0, CW, CH);
+    ctx.fillStyle = '#0c1222';
+    ctx.fillRect(0, 0, CW, CH);
+
+    const zoom = (worldMaxX - worldMinX) / (viewMaxX - viewMinX);
+
+    // --- GRID ---
+    if (L('lGrid')) {
+        ctx.strokeStyle = '#1e2a42'; ctx.lineWidth = 0.5;
+        const step = zoom > 3 ? 5 : zoom > 1.5 ? 10 : 20;
+        for (let x = Math.floor(viewMinX / step) * step; x <= viewMaxX; x += step) {
+            const [sx] = toS(x, viewMaxY);
+            ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, CH); ctx.stroke();
+            if (x % (step * 5) === 0) { ctx.fillStyle = '#4b5563'; ctx.font = fs(8)+'px monospace'; ctx.fillText('Y='+x, sx-12, CH-4); }
+        }
+        for (let y = Math.floor(viewMinY / step) * step; y <= viewMaxY; y += step) {
+            const [,sy] = toS(viewMinX, y);
+            ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(CW, sy); ctx.stroke();
+            if (y % (step * 5) === 0) { ctx.fillStyle = '#4b5563'; ctx.font = fs(8)+'px monospace'; ctx.fillText('X='+y, 2, sy+3); }
+        }
+    }
+
+    // --- CONTOURS ---
+    if (L('lContours') && data.contours) {
+        ctx.strokeStyle = '#7c3aed'; ctx.lineWidth = 0.8; ctx.globalAlpha = 0.5;
+        data.contours.forEach(pts => {
+            if (pts.length < 2) return;
+            ctx.beginPath();
+            pts.forEach((p,i) => { const [sx,sy] = toS(p.x,p.y); i===0?ctx.moveTo(sx,sy):ctx.lineTo(sx,sy); });
+            ctx.stroke();
+        });
+        ctx.globalAlpha = 1;
+    }
+
+    // --- BUILDINGS + FENCES ---
+    if (L('lBuildings')) {
+        data.fences.forEach(pts => {
+            ctx.strokeStyle = '#9ca3af'; ctx.lineWidth = 1; ctx.setLineDash([4,4]);
+            ctx.beginPath();
+            pts.forEach((p,i) => { const [sx,sy] = toS(p.x,p.y); i===0?ctx.moveTo(sx,sy):ctx.lineTo(sx,sy); });
+            ctx.stroke(); ctx.setLineDash([]);
+        });
+        data.buildings.forEach(pts => {
+            ctx.fillStyle = 'rgba(100,116,139,0.3)'; ctx.strokeStyle = '#64748b'; ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            pts.forEach((p,i) => { const [sx,sy] = toS(p.x,p.y); i===0?ctx.moveTo(sx,sy):ctx.lineTo(sx,sy); });
+            ctx.closePath(); ctx.fill(); ctx.stroke();
+        });
+    }
+
+    // --- ROADS ---
+    if (L('lRoads')) {
+        data.roads.forEach(pts => {
+            ctx.strokeStyle = '#6b7280'; ctx.lineWidth = 2;
+            ctx.beginPath();
+            pts.forEach((p,i) => { const [sx,sy] = toS(p.x,p.y); i===0?ctx.moveTo(sx,sy):ctx.lineTo(sx,sy); });
+            ctx.stroke();
+        });
+    }
+
+    // ============= PLANNING LAYERS =============
+
+    // --- DRIVEWAY ---
+    if (L('lDriveway')) {
+        const driveWestU = blockShift - blockW/2 - 2;
+        const driveEastU = 33.4;
+        const driveCenterU = (driveWestU + driveEastU) / 2;
+        const driveLen = driveEastU - driveWestU;
+        drawRotRect(driveCenterU, 0, driveLen, DRIVE_W,
+            'rgba(156,163,175,0.1)', 'rgba(156,163,175,0.2)', 1, null);
+    }
+
+    // --- GRAVEL between hangars ---
+    if (L('lGravel')) {
+        for (let row = 0; row < 2; row++) {
+            const sign = row === 0 ? 1 : -1;
+            const vCenter = sign * (DRIVE_W/2 + HANGAR_L/2);
+            for (let g = 0; g < 2; g++) {
+                const uLeft = blockShift + (-blockW/2 + HANGAR_W) + g*(HANGAR_W+GAP);
+                const gravelU = uLeft + GAP/2;
+                drawRotRect(gravelU, vCenter, GAP, HANGAR_L,
+                    'rgba(217,168,91,0.15)', 'rgba(217,168,91,0.4)', 1, [3,2]);
+
+                const gp = localPt(gravelU, vCenter);
+                const [gsx,gsy] = toS(gp.x,gp.y);
+                ctx.fillStyle = 'rgba(217,168,91,0.5)'; ctx.font = fs(7)+'px monospace'; ctx.textAlign = 'center';
+                ctx.fillText('\u0449\u0435\u0431\u0435\u043d\u044c', gsx, gsy-2);
+                ctx.fillText('6\u043c', gsx, gsy + fs(7) + 1);
+                ctx.textAlign = 'left';
+            }
+        }
+    }
+
+    // --- 6 HANGARS ---
+    if (L('lHangars')) {
+        const names = ['\u04101','\u04102','\u04103','\u04104','\u04105','\u04106'];
+        let hi = 0;
+        for (let row = 0; row < 2; row++) {
+            const sign = row === 0 ? 1 : -1;
+            const vCenter = sign * (DRIVE_W/2 + HANGAR_L/2);
+            for (let col = 0; col < 3; col++) {
+                const uCenter = blockShift + (-blockW/2 + HANGAR_W/2) + col*(HANGAR_W+GAP);
+                drawRotRect(uCenter, vCenter, HANGAR_W, HANGAR_L,
+                    'rgba(59,130,246,0.2)', '#3b82f6', 2, null);
+
+                const cp = localPt(uCenter, vCenter);
+                const [lsx,lsy] = toS(cp.x,cp.y);
+                ctx.fillStyle = '#93c5fd'; ctx.font = 'bold '+fs(12)+'px monospace'; ctx.textAlign = 'center';
+                ctx.fillText(names[hi], lsx, lsy-3);
+                ctx.font = fs(9)+'px monospace'; ctx.fillStyle = '#60a5fa';
+                ctx.fillText('15\u00d730', lsx, lsy + fs(9) + 2);
+                ctx.textAlign = 'left';
+
+                // Gate (driveway side)
+                const gateV = vCenter - sign * HANGAR_L/2;
+                const g1 = localPt(uCenter - HANGAR_W/2 + 2, gateV);
+                const g2 = localPt(uCenter + HANGAR_W/2 - 2, gateV);
+                const [g1s,g1y] = toS(g1.x,g1.y), [g2s,g2y] = toS(g2.x,g2.y);
+                ctx.strokeStyle = '#60a5fa'; ctx.lineWidth = 3;
+                ctx.beginPath(); ctx.moveTo(g1s,g1y); ctx.lineTo(g2s,g2y); ctx.stroke();
+
+                hi++;
+            }
+        }
+    }
+
+    // --- ENTRANCE GATE ---
+    if (L('lGate')) {
+        const gateP1 = localPt(33.4, DRIVE_W/2);
+        const gateP2 = localPt(33.4, -DRIVE_W/2);
+        const gs1 = toS(gateP1.x,gateP1.y), gs2 = toS(gateP2.x,gateP2.y);
+        ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.moveTo(gs1[0],gs1[1]); ctx.lineTo(gs2[0],gs2[1]); ctx.stroke();
+        ctx.fillStyle = '#ef4444'; ctx.font = 'bold '+fs(11)+'px monospace';
+        const gl = toS(gateP1.x + 2*px, gateP1.y + 2*py);
+        ctx.fillText('\u0412\u042a\u0415\u0417\u0414', gl[0], gl[1]);
+    }
+
+    // ============= TOPO LAYERS (on top) =============
+
+    // --- CABLES 6kV ---
+    if (L('lCables')) {
+        data.cables_6kv.forEach(pts => {
+            ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2;
+            ctx.beginPath();
+            pts.forEach((p,i) => { const [sx,sy] = toS(p.x,p.y); i===0?ctx.moveTo(sx,sy):ctx.lineTo(sx,sy); });
+            ctx.stroke();
+        });
+
+        ctx.shadowColor = '#f97316'; ctx.shadowBlur = 4;
+        data.cables_04kv.forEach(pts => {
+            ctx.strokeStyle = '#f97316'; ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            pts.forEach((p,i) => { const [sx,sy] = toS(p.x,p.y); i===0?ctx.moveTo(sx,sy):ctx.lineTo(sx,sy); });
+            ctx.stroke();
+        });
+        ctx.shadowBlur = 0;
+
+        const [clx,cly] = toS(2256554,478808);
+        ctx.save(); ctx.translate(clx,cly); ctx.rotate(-1.2);
+        ctx.fillStyle = '#f97316'; ctx.font = fs(9)+'px monospace';
+        ctx.fillText('\u041a\u041b 0.4\u043a\u0412 (\u041f\u0415\u0420\u0415\u041d\u041e\u0421)', 0, 0);
+        ctx.restore();
+    }
+
+    // --- POLES / TP / VL ---
+    if (L('lPoles')) {
+        data.power_objects.forEach(pts => {
+            ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 1.5; ctx.setLineDash([6,4]);
+            ctx.beginPath();
+            pts.forEach((p,i) => { const [sx,sy] = toS(p.x,p.y); i===0?ctx.moveTo(sx,sy):ctx.lineTo(sx,sy); });
+            ctx.stroke(); ctx.setLineDash([]);
+        });
+        const dotR = Math.max(3, Math.min(4 * Math.sqrt(zoom), 10));
+        data.power_poles.forEach(p => {
+            const [sx,sy] = toS(p.x, p.y);
+            ctx.fillStyle = '#fbbf24';
+            ctx.beginPath(); ctx.arc(sx,sy,dotR,0,Math.PI*2); ctx.fill();
+            ctx.strokeStyle = '#92400e'; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.arc(sx,sy,dotR,0,Math.PI*2); ctx.stroke();
+        });
+        data.labels.forEach(l => {
+            const [sx,sy] = toS(l.x, l.y);
+            if (l.type === 'power') { ctx.fillStyle = '#fbbf24'; ctx.font = 'bold '+fs(9)+'px monospace'; }
+            else if (l.type === 'cable') { ctx.fillStyle = '#fb923c'; ctx.font = fs(8)+'px monospace'; }
+            else { ctx.fillStyle = '#a3a3a3'; ctx.font = fs(8)+'px monospace'; }
+            ctx.fillText(l.text, sx+6, sy-4);
+        });
+    }
+
+    // --- SWAMP ---
+    if (L('lSwamp')) {
+        const [swX,swY] = toS(data.swamp.x, data.swamp.y);
+        const swR = Math.abs(toS(data.swamp.x + 5, data.swamp.y)[0] - swX);
+        ctx.fillStyle = 'rgba(56,189,248,0.08)';
+        ctx.beginPath(); ctx.arc(swX,swY,swR,0,Math.PI*2); ctx.fill();
+        ctx.strokeStyle = 'rgba(56,189,248,0.3)'; ctx.lineWidth = 1; ctx.setLineDash([3,3]);
+        ctx.beginPath(); ctx.arc(swX,swY,swR,0,Math.PI*2); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#38bdf8'; ctx.font = fs(9)+'px monospace';
+        ctx.fillText('\u0411\u043e\u043b\u043e\u0442\u043e', swX - fs(9)*2, swY+3);
+    }
+
+    // --- ELEVATION POINTS ---
+    if (L('lElevations')) {
+        const BALANCE = 123.20;
+        const dotR = Math.max(2, Math.min(4 * Math.sqrt(zoom), 10));
+        const showAll = zoom > 1.3;
+        data.elevations.forEach(e => {
+            const [sx,sy] = toS(e.x, e.y);
+            if (sx < -20 || sx > CW+20 || sy < -20 || sy > CH+20) return;
+            const diff = e.z - BALANCE;
+            if (diff > 0.15) ctx.fillStyle = '#4ade80';
+            else if (diff > 0) ctx.fillStyle = '#86efac';
+            else if (diff > -0.15) ctx.fillStyle = '#fdba74';
+            else ctx.fillStyle = '#fb923c';
+            ctx.beginPath(); ctx.arc(sx,sy,dotR,0,Math.PI*2); ctx.fill();
+            ctx.strokeStyle = diff >= 0 ? '#166534' : '#7c2d12';
+            ctx.lineWidth = 0.7;
+            ctx.beginPath(); ctx.arc(sx,sy,dotR,0,Math.PI*2); ctx.stroke();
+            if (showAll || e.z <= 122.65 || e.z >= 123.85) {
+                ctx.fillStyle = '#e5e7eb'; ctx.font = 'bold '+fs(9)+'px monospace';
+                ctx.fillText(e.z.toFixed(2), sx + dotR + 2, sy - dotR);
+            }
+        });
+        ctx.fillStyle = 'rgba(34,211,238,0.6)'; ctx.font = 'bold '+fs(9)+'px monospace';
+        ctx.fillText('\u0411\u0430\u043b\u0430\u043d\u0441: 123.20\u043c', 34, 18);
+        ctx.fillStyle = '#4ade80'; ctx.fillText('\u25cf \u0441\u0440\u0435\u0437\u043a\u0430', 34, 30);
+        ctx.fillStyle = '#fb923c'; ctx.fillText('\u25cf \u043d\u0430\u0441\u044b\u043f\u044c', 110, 30);
+    }
+
+    // --- BOUNDARY ---
+    if (L('lBoundary')) {
+        ctx.strokeStyle = '#ec4899'; ctx.lineWidth = 2; ctx.setLineDash([8,4]);
+        ctx.beginPath();
+        bnd.forEach((p,i) => { const [sx,sy] = toS(p.x,p.y); i===0?ctx.moveTo(sx,sy):ctx.lineTo(sx,sy); });
+        ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
+
+        ctx.font = 'bold '+fs(11)+'px monospace';
+        bnd.forEach(p => {
+            const [sx,sy] = toS(p.x, p.y);
+            ctx.fillStyle = '#ec4899';
+            ctx.beginPath(); ctx.arc(sx,sy,5,0,Math.PI*2); ctx.fill();
+            ctx.fillStyle = '#fff';
+            const offX = p.label.includes('\u0417') ? -70 : 10;
+            const offY = p.label.includes('\u0421') ? -10 : 18;
+            ctx.fillText(p.label, sx+offX, sy+offY);
+        });
+
+        function dimLabel(p1, p2, text, offset) {
+            const [sx1,sy1] = toS(p1.x, p1.y);
+            const [sx2,sy2] = toS(p2.x, p2.y);
+            const mx = (sx1+sx2)/2, my = (sy1+sy2)/2;
+            const angle = Math.atan2(sy2-sy1, sx2-sx1);
+            const nx = -Math.sin(angle)*offset, ny = Math.cos(angle)*offset;
+            ctx.save(); ctx.translate(mx+nx, my+ny);
+            let da = angle;
+            if (da > Math.PI/2) da -= Math.PI;
+            if (da < -Math.PI/2) da += Math.PI;
+            ctx.rotate(da);
+            ctx.font = 'bold '+fs(11)+'px monospace';
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            const tw = ctx.measureText(text).width + 8;
+            ctx.fillStyle = 'rgba(17,24,39,0.85)'; ctx.fillRect(-tw/2,-9,tw,18);
+            ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 0.5; ctx.strokeRect(-tw/2,-9,tw,18);
+            ctx.fillStyle = '#fef3c7'; ctx.fillText(text, 0, 1);
+            ctx.restore();
+        }
+        dimLabel(bnd[0], bnd[1], '67.1 \u043c', -16);
+        dimLabel(bnd[1], bnd[2], '90.0 \u043c', -16);
+        dimLabel(bnd[2], bnd[3], '67.2 \u043c', 16);
+        dimLabel(bnd[3], bnd[0], '90.0 \u043c', 16);
+
+        ctx.strokeStyle = 'rgba(236,72,153,0.2)'; ctx.lineWidth = 1; ctx.setLineDash([4,8]);
+        const midW = toS((bnd[0].x+bnd[3].x)/2, (bnd[0].y+bnd[3].y)/2);
+        const midE = toS((bnd[1].x+bnd[2].x)/2, (bnd[1].y+bnd[2].y)/2);
+        ctx.beginPath(); ctx.moveTo(midW[0],midW[1]); ctx.lineTo(midE[0],midE[1]); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = 'rgba(236,72,153,0.4)'; ctx.font = fs(10)+'px monospace';
+        ctx.fillText(':362', (midW[0]+midE[0])/2-10, midW[1]-18);
+        ctx.fillText(':363', (midW[0]+midE[0])/2-10, midW[1]+28);
+    }
+
+    // --- DIMENSION LINES ---
+    if (L('lDimensions') && L('lHangars')) {
+        ctx.fillStyle = '#9ca3af'; ctx.font = fs(10)+'px monospace'; ctx.textAlign = 'center';
+
+        const dwP = localPt(blockShift - blockW/2 - 5, 0);
+        const [dwsx,dwsy] = toS(dwP.x,dwP.y);
+        ctx.fillText('19 \u043c', dwsx, dwsy-2);
+        ctx.font = fs(9)+'px monospace'; ctx.fillText('\u043f\u0440\u043e\u0435\u0437\u0434', dwsx, dwsy + fs(9) + 2);
+
+        ctx.font = fs(9)+'px monospace';
+        for (let col = 0; col < 3; col++) {
+            const u = blockShift + (-blockW/2 + HANGAR_W/2) + col*(HANGAR_W+GAP);
+            const wp = localPt(u, DRIVE_W/2 + HANGAR_L + 3);
+            const [wsx,wsy] = toS(wp.x,wp.y);
+            ctx.fillStyle = '#9ca3af'; ctx.fillText('15\u043c', wsx, wsy);
+        }
+
+        const bwP1 = localPt(blockShift - blockW/2, -(DRIVE_W/2 + HANGAR_L + 5));
+        const bwP2 = localPt(blockShift + blockW/2, -(DRIVE_W/2 + HANGAR_L + 5));
+        const [bw1x,bw1y] = toS(bwP1.x,bwP1.y), [bw2x,bw2y] = toS(bwP2.x,bwP2.y);
+        ctx.strokeStyle = '#9ca3af'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(bw1x,bw1y); ctx.lineTo(bw2x,bw2y); ctx.stroke();
+        ctx.fillStyle = '#9ca3af'; ctx.font = fs(10)+'px monospace';
+        ctx.fillText('57 \u043c', (bw1x+bw2x)/2, (bw1y+bw2y)/2 - 5);
+
+        const dp1 = localPt(blockShift - blockW/2 - 4, DRIVE_W/2 + HANGAR_L);
+        const dp2 = localPt(blockShift - blockW/2 - 4, DRIVE_W/2);
+        const [d1x,d1y] = toS(dp1.x,dp1.y), [d2x,d2y] = toS(dp2.x,dp2.y);
+        ctx.save(); ctx.translate((d1x+d2x)/2,(d1y+d2y)/2);
+        ctx.rotate(Math.atan2(d2y-d1y,d2x-d1x));
+        ctx.fillText('30\u043c', 0, -4); ctx.restore();
+
+        const ns1 = localPt(blockShift + blockW/2 + 5, DRIVE_W/2 + HANGAR_L);
+        const ns2 = localPt(blockShift + blockW/2 + 5, -(DRIVE_W/2 + HANGAR_L));
+        const [ns1x,ns1y] = toS(ns1.x,ns1.y), [ns2x,ns2y] = toS(ns2.x,ns2.y);
+        ctx.strokeStyle = '#9ca3af'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(ns1x,ns1y); ctx.lineTo(ns2x,ns2y); ctx.stroke();
+        ctx.save(); ctx.translate((ns1x+ns2x)/2,(ns1y+ns2y)/2);
+        ctx.rotate(Math.atan2(ns2y-ns1y,ns2x-ns1x));
+        ctx.fillText('79 \u043c', 0, -5); ctx.restore();
+
+        ctx.textAlign = 'left';
+    }
+
+    // --- SETBACK ANNOTATIONS ---
+    if (L('lSetbacks') && L('lHangars')) {
+        ctx.fillStyle = 'rgba(239,68,68,0.5)'; ctx.font = fs(8)+'px monospace';
+
+        const eSetP = localPt(33, DRIVE_W/2 + 10);
+        const [esx,esy] = toS(eSetP.x,eSetP.y);
+        ctx.fillText('~1\u043c', esx, esy);
+
+        const nSetP = localPt(blockShift, DRIVE_W/2 + HANGAR_L + 3);
+        const [nsx,nsy] = toS(nSetP.x,nSetP.y);
+        ctx.textAlign = 'center';
+        ctx.fillText('~5.5\u043c \u0434\u043e \u0421 \u0433\u0440\u0430\u043d\u0438\u0446\u044b', nsx, nsy - 12);
+
+        const sSetP = localPt(blockShift, -(DRIVE_W/2 + HANGAR_L + 3));
+        const [ssx,ssy] = toS(sSetP.x,sSetP.y);
+        ctx.fillText('~5.5\u043c \u0434\u043e \u042e \u0433\u0440\u0430\u043d\u0438\u0446\u044b', ssx, ssy + 15);
+
+        const wSetP = localPt(blockShift - blockW/2 - 4, DRIVE_W/2 + HANGAR_L/2);
+        const [wsx,wsy] = toS(wSetP.x,wSetP.y);
+        ctx.fillText('~8\u043c', wsx, wsy);
+
+        ctx.textAlign = 'left';
+
+        const perpP = localPt(33, 0);
+        const [ppx,ppy] = toS(perpP.x,perpP.y);
+        const sq = 4;
+        const sq1 = toS(perpP.x+sq*ax, perpP.y+sq*ay);
+        const sq2 = toS(perpP.x+sq*ax+sq*px, perpP.y+sq*ay+sq*py);
+        const sq3 = toS(perpP.x+sq*px, perpP.y+sq*py);
+        ctx.strokeStyle = 'rgba(239,68,68,0.3)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(sq1[0],sq1[1]); ctx.lineTo(sq2[0],sq2[1]); ctx.lineTo(sq3[0],sq3[1]); ctx.stroke();
+        ctx.fillStyle = 'rgba(239,68,68,0.4)'; ctx.font = fs(8)+'px monospace';
+        ctx.fillText('90\u00b0', ppx+8, ppy-2);
+    }
+
+    // --- DRAINAGE ---
+    if (L('lDrainage')) {
+        const [a1x,a1y] = toS(2256555,478848);
+        const [a2x,a2y] = toS(2256610,478790);
+        ctx.strokeStyle = 'rgba(56,189,248,0.25)'; ctx.lineWidth = 1.5;
+        ctx.setLineDash([5,4]); ctx.beginPath(); ctx.moveTo(a1x,a1y); ctx.lineTo(a2x,a2y); ctx.stroke();
+        ctx.setLineDash([]);
+        const aa = Math.atan2(a2y-a1y,a2x-a1x);
+        ctx.beginPath();
+        ctx.moveTo(a2x,a2y);
+        ctx.lineTo(a2x-10*Math.cos(aa-0.4),a2y-10*Math.sin(aa-0.4));
+        ctx.moveTo(a2x,a2y);
+        ctx.lineTo(a2x-10*Math.cos(aa+0.4),a2y-10*Math.sin(aa+0.4));
+        ctx.strokeStyle = 'rgba(56,189,248,0.4)'; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.fillStyle = 'rgba(56,189,248,0.35)'; ctx.font = fs(9)+'px monospace';
+        ctx.fillText('\u0443\u043a\u043b\u043e\u043d \u0417/\u042e\u0417 \u2192 \u0421\u0412', (a1x+a2x)/2-30, (a1y+a2y)/2-6);
+    }
+
+    // --- COMPASS + DIRECTIONS ---
+    ctx.fillStyle = '#e5e7eb'; ctx.font = '14px monospace';
+    ctx.fillText('N', CW-35, 22);
+    ctx.strokeStyle = '#e5e7eb'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(CW-30,30); ctx.lineTo(CW-30,50);
+    ctx.moveTo(CW-34,36); ctx.lineTo(CW-30,30); ctx.lineTo(CW-26,36); ctx.stroke();
+
+    ctx.fillStyle = '#4b5563'; ctx.font = '10px monospace';
+    ctx.fillText('\u0417\u0410\u041f\u0410\u0414', 30, CH-8);
+    ctx.textAlign = 'right'; ctx.fillText('\u0412\u041e\u0421\u0422\u041e\u041a', CW-30, CH-8);
+    ctx.textAlign = 'center'; ctx.fillText('\u0421\u0415\u0412\u0415\u0420', CW/2, 14);
+    ctx.fillText('\u042e\u0413', CW/2, CH-8);
+    ctx.textAlign = 'left';
+
+    // Scale bar (adaptive)
+    const pxPerMeter = CW / (viewMaxX - viewMinX);
+    let scaleM = 50;
+    if (pxPerMeter > 15) scaleM = 20;
+    if (pxPerMeter > 30) scaleM = 10;
+    if (pxPerMeter > 60) scaleM = 5;
+    const scalePx = scaleM * pxPerMeter;
+    const sbX = 40, sbY = CH - 24;
+    ctx.strokeStyle = '#d1d5db'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(sbX, sbY); ctx.lineTo(sbX + scalePx, sbY);
+    ctx.moveTo(sbX, sbY-4); ctx.lineTo(sbX, sbY+4);
+    ctx.moveTo(sbX + scalePx, sbY-4); ctx.lineTo(sbX + scalePx, sbY+4);
+    ctx.moveTo(sbX + scalePx/2, sbY-3); ctx.lineTo(sbX + scalePx/2, sbY+3);
+    ctx.stroke();
+    ctx.fillStyle = '#d1d5db'; ctx.font = '10px monospace';
+    ctx.textAlign = 'center'; ctx.fillText(scaleM + ' \u043c', sbX + scalePx/2, sbY + 14);
+    ctx.textAlign = 'left'; ctx.fillText('0', sbX-4, sbY + 14);
+}
+
+// ===================== TOOLTIP =====================
+canvas.addEventListener('mousemove', (evt) => {
+    if (isDragging) { tip.style.display = 'none'; return; }
+    const rect = canvas.getBoundingClientRect();
+    const mx = evt.clientX - rect.left, my = evt.clientY - rect.top;
+    let found = null;
+    const hitR = Math.max(8, 12 / ((worldMaxX - worldMinX) / (viewMaxX - viewMinX)));
+    if (L('lElevations')) {
+        data.elevations.forEach(e => {
+            const [sx,sy] = toS(e.x, e.y);
+            if (Math.abs(sx-mx) < hitR && Math.abs(sy-my) < hitR) found = e;
+        });
+    }
+    if (found) {
+        tip.style.display = 'block';
+        tip.style.left = (evt.clientX+12)+'px';
+        tip.style.top = (evt.clientY-30)+'px';
+        const diff = found.z - 123.20;
+        const cfLabel = diff >= 0
+            ? '<span style="color:#4ade80">\u0441\u0440\u0435\u0437\u043a\u0430 '+diff.toFixed(2)+' \u043c</span>'
+            : '<span style="color:#fb923c">\u043d\u0430\u0441\u044b\u043f\u044c '+Math.abs(diff).toFixed(2)+' \u043c</span>';
+        tip.innerHTML = '<b>'+found.z.toFixed(2)+' \u043c \u0411\u0421</b> ('+cfLabel+')<br>Y='+found.x.toFixed(1)+' X='+found.y.toFixed(1);
+    } else { tip.style.display = 'none'; }
+});
+
+// ===================== MOBILE PANEL TOGGLE =====================
+document.getElementById('panelToggle').addEventListener('click', () => {
+    document.getElementById('panel').classList.toggle('open');
+});
+
+// ===================== INIT =====================
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+updateZoomInfo();
+</script>
+</body>
+</html>
