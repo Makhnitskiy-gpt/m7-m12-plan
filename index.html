@@ -198,29 +198,43 @@ const worldMinY = _rMinY, worldMaxY = _rMaxY;
 let viewMinX = worldMinX, viewMaxX = worldMaxX;
 let viewMinY = worldMinY, viewMaxY = worldMaxY;
 
-function toS(x, y) {
-    const [rx, ry] = rot(x, y);
+// Uniform scale: same meters-per-pixel in both X and Y → correct proportions
+function _uniScale() {
     const PAD = 30;
     const W = CW - 2 * PAD, H = CH - 2 * PAD;
+    const scale = Math.min(W / (viewMaxX - viewMinX), H / (viewMaxY - viewMinY));
+    return {
+        scale,
+        cx: PAD + W / 2, cy: PAD + H / 2,
+        midX: (viewMinX + viewMaxX) / 2, midY: (viewMinY + viewMaxY) / 2
+    };
+}
+
+function toS(x, y) {
+    const [rx, ry] = rot(x, y);
+    const u = _uniScale();
     return [
-        PAD + ((rx - viewMinX) / (viewMaxX - viewMinX)) * W,
-        PAD + ((viewMaxY - ry) / (viewMaxY - viewMinY)) * H
+        u.cx + (rx - u.midX) * u.scale,
+        u.cy - (ry - u.midY) * u.scale
     ];
 }
 
 function fromS(sx, sy) {
-    const PAD = 30;
-    const W = CW - 2 * PAD, H = CH - 2 * PAD;
-    const rx = viewMinX + ((sx - PAD) / W) * (viewMaxX - viewMinX);
-    const ry = viewMaxY - ((sy - PAD) / H) * (viewMaxY - viewMinY);
+    const u = _uniScale();
+    const rx = u.midX + (sx - u.cx) / u.scale;
+    const ry = u.midY - (sy - u.cy) / u.scale;
     return unrot(rx, ry);
 }
 
+// Returns rotated-space coords (for zoom/pan that operates in rotated space)
+function fromSRot(sx, sy) {
+    const u = _uniScale();
+    return [u.midX + (sx - u.cx) / u.scale, u.midY - (sy - u.cy) / u.scale];
+}
+
 function getScale() {
-    const realMeters = viewMaxX - viewMinX;
-    const screenPx = CW - 60;
-    const metersPerPx = realMeters / screenPx;
-    return Math.round(metersPerPx * 1000);
+    const u = _uniScale();
+    return Math.round((1 / u.scale) * 1000);
 }
 
 function updateZoomInfo() {
@@ -228,15 +242,15 @@ function updateZoomInfo() {
 }
 
 function zoomAt(cx, cy, factor) {
-    const [wx, wy] = fromS(cx, cy);
+    const [rwx, rwy] = fromSRot(cx, cy);
     const newW = (viewMaxX - viewMinX) / factor;
     const newH = (viewMaxY - viewMinY) / factor;
-    const rx = (wx - viewMinX) / (viewMaxX - viewMinX);
-    const ry = (wy - viewMinY) / (viewMaxY - viewMinY);
-    viewMinX = wx - rx * newW;
-    viewMaxX = wx + (1 - rx) * newW;
-    viewMinY = wy - ry * newH;
-    viewMaxY = wy + (1 - ry) * newH;
+    const rx = (rwx - viewMinX) / (viewMaxX - viewMinX);
+    const ry = (rwy - viewMinY) / (viewMaxY - viewMinY);
+    viewMinX = rwx - rx * newW;
+    viewMaxX = rwx + (1 - rx) * newW;
+    viewMinY = rwy - ry * newH;
+    viewMaxY = rwy + (1 - ry) * newH;
     updateZoomInfo();
     draw();
 }
@@ -249,7 +263,7 @@ function resetView() {
 }
 
 // ===================== MOUSE INTERACTIONS =====================
-let isDragging = false, dragStartX, dragStartY, dragViewMinX, dragViewMaxX, dragViewMinY, dragViewMaxY;
+let isDragging = false, dragStartX, dragStartY, dragViewMinX, dragViewMaxX, dragViewMinY, dragViewMaxY, dragScale;
 
 canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
@@ -265,16 +279,15 @@ canvas.addEventListener('mousedown', (e) => {
     dragStartX = e.clientX; dragStartY = e.clientY;
     dragViewMinX = viewMinX; dragViewMaxX = viewMaxX;
     dragViewMinY = viewMinY; dragViewMaxY = viewMaxY;
+    dragScale = _uniScale().scale;
     canvas.classList.add('dragging');
 });
 
 window.addEventListener('mousemove', (e) => {
     if (!isDragging) return;
     const dx = e.clientX - dragStartX, dy = e.clientY - dragStartY;
-    const PAD = 30;
-    const W = CW - 2*PAD, H = CH - 2*PAD;
-    const worldDx = -dx / W * (dragViewMaxX - dragViewMinX);
-    const worldDy = dy / H * (dragViewMaxY - dragViewMinY);
+    const worldDx = -dx / dragScale;
+    const worldDy = dy / dragScale;
     viewMinX = dragViewMinX + worldDx;
     viewMaxX = dragViewMaxX + worldDx;
     viewMinY = dragViewMinY + worldDy;
@@ -298,6 +311,7 @@ canvas.addEventListener('touchstart', (e) => {
         dragStartX = touches[0].clientX; dragStartY = touches[0].clientY;
         dragViewMinX = viewMinX; dragViewMaxX = viewMaxX;
         dragViewMinY = viewMinY; dragViewMaxY = viewMaxY;
+        dragScale = _uniScale().scale;
     } else if (touches.length === 2) {
         isDragging = false;
         lastTouchDist = Math.hypot(touches[1].clientX - touches[0].clientX, touches[1].clientY - touches[0].clientY);
@@ -314,10 +328,8 @@ canvas.addEventListener('touchmove', (e) => {
     const ts = Array.from(e.touches);
     if (ts.length === 1 && isDragging) {
         const dx = ts[0].clientX - dragStartX, dy = ts[0].clientY - dragStartY;
-        const PAD = 30;
-        const W = CW - 2*PAD, H = CH - 2*PAD;
-        const worldDx = -dx / W * (dragViewMaxX - dragViewMinX);
-        const worldDy = dy / H * (dragViewMaxY - dragViewMinY);
+        const worldDx = -dx / dragScale;
+        const worldDy = dy / dragScale;
         viewMinX = dragViewMinX + worldDx;
         viewMaxX = dragViewMaxX + worldDx;
         viewMinY = dragViewMinY + worldDy;
@@ -425,18 +437,17 @@ function draw() {
 
     const zoom = (worldMaxX - worldMinX) / (viewMaxX - viewMinX);
 
-    // --- GRID (in rotated space — screen-aligned) ---
+    // --- GRID (in rotated space — screen-aligned, uniform scale) ---
     if (L('lGrid')) {
         ctx.strokeStyle = '#1e2a42'; ctx.lineWidth = 0.5;
         const step = zoom > 3 ? 5 : zoom > 1.5 ? 10 : 20;
-        const PAD = 30;
-        const W = CW - 2*PAD, H = CH - 2*PAD;
+        const u = _uniScale();
         for (let rx = Math.floor(viewMinX / step) * step; rx <= viewMaxX; rx += step) {
-            const sx = PAD + ((rx - viewMinX) / (viewMaxX - viewMinX)) * W;
+            const sx = u.cx + (rx - u.midX) * u.scale;
             ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, CH); ctx.stroke();
         }
         for (let ry = Math.floor(viewMinY / step) * step; ry <= viewMaxY; ry += step) {
-            const sy = PAD + ((viewMaxY - ry) / (viewMaxY - viewMinY)) * H;
+            const sy = u.cy - (ry - u.midY) * u.scale;
             ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(CW, sy); ctx.stroke();
         }
     }
@@ -816,8 +827,8 @@ function draw() {
     ctx.fillText('\u042e\u0413', CW/2, CH-8);
     ctx.textAlign = 'left';
 
-    // Scale bar (adaptive)
-    const pxPerMeter = CW / (viewMaxX - viewMinX);
+    // Scale bar (adaptive, uniform scale)
+    const pxPerMeter = _uniScale().scale;
     let scaleM = 50;
     if (pxPerMeter > 15) scaleM = 20;
     if (pxPerMeter > 30) scaleM = 10;
