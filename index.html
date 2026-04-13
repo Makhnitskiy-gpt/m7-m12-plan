@@ -163,29 +163,57 @@ function resizeCanvas() {
     draw();
 }
 
-// ===================== ZOOM / PAN STATE =====================
-const worldMinX = 2256530, worldMaxX = 2256650;
-const worldMinY = 478755, worldMaxY = 478882;
+// ===================== ROTATION TO STRAIGHTEN BOUNDARY =====================
+// The boundary is rotated ~6.87° from cardinal directions in MSK-50.
+// We rotate all points so the boundary appears as an axis-aligned rectangle on screen.
+const _bnd = data.boundary;
+const _rotCx = (_bnd[0].x+_bnd[1].x+_bnd[2].x+_bnd[3].x)/4;
+const _rotCy = (_bnd[0].y+_bnd[1].y+_bnd[2].y+_bnd[3].y)/4;
+// East boundary direction (NE→SE)
+const _edx = _bnd[2].x - _bnd[1].x, _edy = _bnd[2].y - _bnd[1].y;
+// Angle to rotate so east boundary becomes pure vertical (south)
+const _rotAngle = Math.atan2(-_edx, -_edy); // ≈ 0.120 rad ≈ 6.87°
+const _cosR = Math.cos(_rotAngle), _sinR = Math.sin(_rotAngle);
+
+function rot(x, y) {
+    const dx = x - _rotCx, dy = y - _rotCy;
+    return [_rotCx + dx*_cosR - dy*_sinR, _rotCy + dx*_sinR + dy*_cosR];
+}
+function unrot(rx, ry) {
+    const dx = rx - _rotCx, dy = ry - _rotCy;
+    return [_rotCx + dx*_cosR + dy*_sinR, _rotCy - dx*_sinR + dy*_cosR];
+}
+
+// ===================== ZOOM / PAN STATE (in rotated space) =====================
+// Compute world bounds in rotated space
+const _allPts = _bnd.map(p => rot(p.x, p.y));
+const _rMinX = Math.min(..._allPts.map(p=>p[0])) - 15;
+const _rMaxX = Math.max(..._allPts.map(p=>p[0])) + 20;
+const _rMinY = Math.min(..._allPts.map(p=>p[1])) - 15;
+const _rMaxY = Math.max(..._allPts.map(p=>p[1])) + 20;
+
+const worldMinX = _rMinX, worldMaxX = _rMaxX;
+const worldMinY = _rMinY, worldMaxY = _rMaxY;
 
 let viewMinX = worldMinX, viewMaxX = worldMaxX;
 let viewMinY = worldMinY, viewMaxY = worldMaxY;
 
 function toS(x, y) {
+    const [rx, ry] = rot(x, y);
     const PAD = 30;
     const W = CW - 2 * PAD, H = CH - 2 * PAD;
     return [
-        PAD + ((x - viewMinX) / (viewMaxX - viewMinX)) * W,
-        PAD + ((viewMaxY - y) / (viewMaxY - viewMinY)) * H
+        PAD + ((rx - viewMinX) / (viewMaxX - viewMinX)) * W,
+        PAD + ((viewMaxY - ry) / (viewMaxY - viewMinY)) * H
     ];
 }
 
 function fromS(sx, sy) {
     const PAD = 30;
     const W = CW - 2 * PAD, H = CH - 2 * PAD;
-    return [
-        viewMinX + ((sx - PAD) / W) * (viewMaxX - viewMinX),
-        viewMaxY - ((sy - PAD) / H) * (viewMaxY - viewMinY)
-    ];
+    const rx = viewMinX + ((sx - PAD) / W) * (viewMaxX - viewMinX);
+    const ry = viewMaxY - ((sy - PAD) / H) * (viewMaxY - viewMinY);
+    return unrot(rx, ry);
 }
 
 function getScale() {
@@ -397,19 +425,19 @@ function draw() {
 
     const zoom = (worldMaxX - worldMinX) / (viewMaxX - viewMinX);
 
-    // --- GRID ---
+    // --- GRID (in rotated space — screen-aligned) ---
     if (L('lGrid')) {
         ctx.strokeStyle = '#1e2a42'; ctx.lineWidth = 0.5;
         const step = zoom > 3 ? 5 : zoom > 1.5 ? 10 : 20;
-        for (let x = Math.floor(viewMinX / step) * step; x <= viewMaxX; x += step) {
-            const [sx] = toS(x, viewMaxY);
+        const PAD = 30;
+        const W = CW - 2*PAD, H = CH - 2*PAD;
+        for (let rx = Math.floor(viewMinX / step) * step; rx <= viewMaxX; rx += step) {
+            const sx = PAD + ((rx - viewMinX) / (viewMaxX - viewMinX)) * W;
             ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, CH); ctx.stroke();
-            if (x % (step * 5) === 0) { ctx.fillStyle = '#4b5563'; ctx.font = fs(8)+'px monospace'; ctx.fillText('Y='+x, sx-12, CH-4); }
         }
-        for (let y = Math.floor(viewMinY / step) * step; y <= viewMaxY; y += step) {
-            const [,sy] = toS(viewMinX, y);
+        for (let ry = Math.floor(viewMinY / step) * step; ry <= viewMaxY; ry += step) {
+            const sy = PAD + ((viewMaxY - ry) / (viewMaxY - viewMinY)) * H;
             ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(CW, sy); ctx.stroke();
-            if (y % (step * 5) === 0) { ctx.fillStyle = '#4b5563'; ctx.font = fs(8)+'px monospace'; ctx.fillText('X='+y, 2, sy+3); }
         }
     }
 
@@ -771,17 +799,20 @@ function draw() {
         ctx.fillText('\u0443\u043a\u043b\u043e\u043d \u0417/\u042e\u0417 \u2192 \u0421\u0412', (a1x+a2x)/2-30, (a1y+a2y)/2-6);
     }
 
-    // --- COMPASS + DIRECTIONS ---
-    ctx.fillStyle = '#e5e7eb'; ctx.font = '14px monospace';
-    ctx.fillText('N', CW-35, 22);
+    // --- COMPASS (rotated ~7° to show true north) ---
+    const compassX = CW - 40, compassY = 45;
+    ctx.save(); ctx.translate(compassX, compassY); ctx.rotate(-_rotAngle);
+    ctx.fillStyle = '#e5e7eb'; ctx.font = '13px monospace'; ctx.textAlign = 'center';
+    ctx.fillText('N', 0, -22);
     ctx.strokeStyle = '#e5e7eb'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(CW-30,30); ctx.lineTo(CW-30,50);
-    ctx.moveTo(CW-34,36); ctx.lineTo(CW-30,30); ctx.lineTo(CW-26,36); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,-16); ctx.lineTo(0,16);
+    ctx.moveTo(-4,-10); ctx.lineTo(0,-16); ctx.lineTo(4,-10); ctx.stroke();
+    ctx.restore();
 
     ctx.fillStyle = '#4b5563'; ctx.font = '10px monospace';
     ctx.fillText('\u0417\u0410\u041f\u0410\u0414', 30, CH-8);
     ctx.textAlign = 'right'; ctx.fillText('\u0412\u041e\u0421\u0422\u041e\u041a', CW-30, CH-8);
-    ctx.textAlign = 'center'; ctx.fillText('\u0421\u0415\u0412\u0415\u0420', CW/2, 14);
+    ctx.textAlign = 'center';
     ctx.fillText('\u042e\u0413', CW/2, CH-8);
     ctx.textAlign = 'left';
 
